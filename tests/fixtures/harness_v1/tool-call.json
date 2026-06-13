@@ -1,0 +1,9 @@
+{
+  "type": "tool-call",
+  "toolCallId": "call_demo_0001",
+  "toolName": "Bash",
+  "input": {
+    "command": "echo mentu-harness-demo"
+  },
+  "providerExecuted": false
+}

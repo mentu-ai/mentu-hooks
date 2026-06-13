@@ -1,0 +1,21 @@
+{
+  "exit_code": 0,
+  "ledger_ops_normalized": [],
+  "mentu_argv": [
+    [
+      "cir",
+      "patterns",
+      "--format",
+      "json"
+    ],
+    [
+      "cir",
+      "query",
+      "--limit",
+      "5",
+      "--format",
+      "json"
+    ]
+  ],
+  "stdout": "## CIR Patterns (compound learning)\n\n- **boundary-catch** (seen 7x, strength: 82%) \u2014 catch at boundaries, never mid-flight\n- **fail-open-substrate** (seen 3x, strength: 55%) \u2014 absent substrate degrades to no-op\n\n## Recent CIR Evidence\n\n- [2026-06-12] engine redeployed; flaky suites green (confidence: 91%)\n- [2026-06-09] dream cycle ran: 36 consolidations (confidence: 74%)\n\n"
+}

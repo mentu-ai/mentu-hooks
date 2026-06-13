@@ -1,0 +1,4 @@
+{"op":"capture","payload":{"body":"learned the boundary-catch invariant"}}
+{"op":"annotate","payload":{"body":"noted fail-open substrate behavior"}}
+{"op":"approve","payload":{"body":"step verified"}}
+{"kind":"warning","payload":{"body":"scope drift caught"}}

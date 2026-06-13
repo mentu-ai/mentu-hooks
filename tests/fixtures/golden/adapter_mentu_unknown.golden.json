@@ -1,0 +1,19 @@
+{
+  "exit_code": 0,
+  "ledger_ops_normalized": [],
+  "mentu_argv": [
+    [
+      "cir",
+      "capture",
+      "--kind",
+      "agent_event",
+      "--body",
+      "agent:claude: event: Frobnicate",
+      "--domain",
+      "",
+      "--actor",
+      "agent:claude"
+    ]
+  ],
+  "stdout": "{}\n"
+}

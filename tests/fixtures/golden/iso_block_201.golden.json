@@ -1,0 +1,6 @@
+{
+  "exit_code": 2,
+  "ledger_ops_normalized": [],
+  "mentu_argv": [],
+  "stdout": "BLOCKED by context-isolation-gate: Message has 201 lines (limit: 200). Write to .claude/summaries/ instead.\n\nThe sub-agent must write its findings to a file under .claude/summaries/ and return ONLY the file path. Raw data must not leak into the orchestrator's context window. See .claude/skills/context-isolation-protocol/SKILL.md for details.\n"
+}

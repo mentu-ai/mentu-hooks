@@ -1,0 +1,8 @@
+{
+  "agent": "claude",
+  "event": "session_start",
+  "session_id": "sess-0001",
+  "actor": "agent:claude",
+  "cwd": "/tmp/project",
+  "source": null
+}

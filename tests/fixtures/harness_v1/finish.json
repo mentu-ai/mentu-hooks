@@ -1,0 +1,5 @@
+{
+  "type": "finish",
+  "finishReason": "stop",
+  "text": "All steps complete. LOOP_COMPLETE"
+}

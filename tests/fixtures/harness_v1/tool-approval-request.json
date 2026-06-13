@@ -1,0 +1,10 @@
+{
+  "type": "tool-approval-request",
+  "toolCallId": "call_demo_0002",
+  "approvalId": "appr_demo_0002",
+  "toolName": "Write",
+  "input": {
+    "file_path": "docs/demo.md",
+    "content": "synthetic demo content"
+  }
+}

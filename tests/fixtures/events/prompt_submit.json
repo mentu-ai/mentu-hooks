@@ -1,0 +1,8 @@
+{
+  "agent": "cursor",
+  "event": "prompt_submit",
+  "session_id": "sess-0002",
+  "actor": "agent:cursor",
+  "cwd": "/tmp/project",
+  "prompt": "Refactor the parser to handle nested blocks."
+}

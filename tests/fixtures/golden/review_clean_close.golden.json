@@ -1,0 +1,20 @@
+{
+  "exit_code": 0,
+  "ledger_ops_normalized": [
+    {
+      "actor": "agent:golden",
+      "id": 0,
+      "op": "close",
+      "payload": {
+        "body": "Auto-closed: all checks passed",
+        "commitment": "cmt_golden",
+        "evidence": "tier_1_auto",
+        "kind": "verdict"
+      },
+      "ts": 0,
+      "workspace": "golden-ws"
+    }
+  ],
+  "mentu_argv": [],
+  "stdout": ""
+}

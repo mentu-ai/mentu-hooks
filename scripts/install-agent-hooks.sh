@@ -1,259 +1,276 @@
 #!/usr/bin/env bash
-# Mentu CIR Agent Hook Installer
-# Installs universal CIR signal hooks into all detected AI tool configs.
-# Replaces Superset's notification hooks with Mentu intelligence hooks.
+# Mentu Policy Harness — capability-aware agent hook installer (M4).
 #
-# Targets: Claude Code, Cursor, Gemini, Codex
-# Idempotent: safe to run multiple times.
+# Deploys the self-contained policy package (mentu_policy/) + the shim-based
+# hook files to ~/.mentu/hooks/, then wires each detected agent's native config
+# to them. The wiring is CAPABILITY-AWARE: pre-action GATE events are wired only
+# where the capability registry (mentu_policy.capabilities) says gate:True
+# (Claude/Codex/Cursor). Gemini gets OBSERVE-ONLY wiring — its lifecycle events
+# are post-hoc (gate:False), so it is never advertised a pre-action gate it
+# cannot honor.
+#
+# Preserved virtues of the legacy installer: opt-in, backs up each native config
+# to ~/.mentu/backups/<ts>/ before editing, only touches agents whose config dir
+# exists, and is idempotent (re-running adds no duplicate entries).
+#
+# Every path is derived from $HOME, so the test suite (tests/test_installer.py)
+# exercises it against a mktemp HOME. NEVER run this against your real home —
+# tests and manual checks always invoke it with HOME=$(mktemp -d).
 set -euo pipefail
 
-HOOKS_SRC="$(cd "$(dirname "$0")/../hooks" && pwd)"
-HOOKS_DST="$HOME/.mentu/hooks"
-BACKUP_DIR="$HOME/.mentu/backups/$(date +%Y%m%d-%H%M%S)"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+HOOKS_REPO=$(cd "$SCRIPT_DIR/.." && pwd)
+SRC_HOOKS="$HOOKS_REPO/hooks"
+SRC_PKG="$HOOKS_REPO/mentu_policy"
 
-log() { echo "[mentu-hooks] $*"; }
+HOOKS_DST="$HOME/.mentu/hooks"
+PKG_DST="$HOOKS_DST/mentu_policy"
+BACKUP_DIR="$HOME/.mentu/backups/$(date +%Y%m%d-%H%M%S)-$$"
+
+log()  { echo "[mentu-hooks] $*"; }
 warn() { echo "[mentu-hooks] WARNING: $*" >&2; }
+backup() {  # backup <file> <name-in-backup-dir>
+    [[ -f "$1" ]] || return 0
+    mkdir -p "$BACKUP_DIR"
+    cp "$1" "$BACKUP_DIR/$2"
+    log "Backed up $1 → $BACKUP_DIR/$2"
+}
 
 mkdir -p "$HOOKS_DST"
 
-# ─── Step 1: Install hook scripts to ~/.mentu/hooks/ ─────────────────────────
+# ─── Step 1: deploy the self-contained policy package ────────────────────────
+# A deployed copy lives at ~/.mentu/hooks/mentu_policy so the shims resolve the
+# package relative to their own location (no PYTHONPATH / CWD dependency).
+rm -rf "$PKG_DST"
+cp -R "$SRC_PKG" "$PKG_DST"
+find "$PKG_DST" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+log "Deployed mentu_policy package → $PKG_DST"
 
-HOOK_FILES=(
-    mentu_agent_hook.sh
-    cursor_cir_hook.sh
-    gemini_cir_hook.sh
-    codex_cir_hook.sh
+# ─── Step 2: deploy the shim-based hook files ────────────────────────────────
+SHIM_HOOKS=(
+    mentu_agent_hook.sh         # universal observe (all agents)
+    codex_cir_hook.sh           # codex adapter shim
+    cursor_cir_hook.sh          # cursor adapter shim (real permission verdict)
+    gemini_cir_hook.sh          # gemini adapter shim (observe-only / degrade)
+    pre-tool-use-permission.sh  # claude trust-banded gate
+    pre-tool-use-inject.sh      # claude sub-agent prompt enrichment (supply)
+    review_gate.py              # claude Stop gate
+    context_isolation_gate.py   # claude SubagentStop gate
 )
-
-for f in "${HOOK_FILES[@]}"; do
-    src="$HOOKS_SRC/$f"
-    dst="$HOOKS_DST/$f"
+for f in "${SHIM_HOOKS[@]}"; do
+    src="$SRC_HOOKS/$f"
     if [[ ! -f "$src" ]]; then
         warn "Source hook not found: $src"
         continue
     fi
-    cp "$src" "$dst"
-    chmod +x "$dst"
-    log "Installed $f → $dst"
+    cp "$src" "$HOOKS_DST/$f"
+    chmod +x "$HOOKS_DST/$f"
 done
+log "Deployed shim hooks → $HOOKS_DST"
 
-# Also ensure the universal hook has a short alias
-ln -sf "$HOOKS_DST/mentu_agent_hook.sh" "$HOOKS_DST/mentu-agent-hook.sh" 2>/dev/null || true
-
-# ─── Step 2: Claude Code — replace Superset hooks in settings.json ───────────
-
+# ─── Step 3: Claude Code — full wiring (gate:True) ───────────────────────────
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 if [[ -f "$CLAUDE_SETTINGS" ]]; then
-    mkdir -p "$BACKUP_DIR"
-    cp "$CLAUDE_SETTINGS" "$BACKUP_DIR/claude-settings.json"
-    log "Backed up Claude settings → $BACKUP_DIR/claude-settings.json"
+    backup "$CLAUDE_SETTINGS" claude-settings.json
+    MENTU_HOOKS_DST="$HOOKS_DST" CLAUDE_SETTINGS="$CLAUDE_SETTINGS" /usr/bin/env python3 <<'PY'
+import json, os, sys
+dst = os.environ["MENTU_HOOKS_DST"]
+sp = os.environ["CLAUDE_SETTINGS"]
+sys.path.insert(0, dst)
+try:
+    from mentu_policy import capabilities
+    can_gate = capabilities.supports("claude", "gate")
+except Exception:
+    can_gate = True  # fail-open: a missing registry never silently drops gating
 
-    /usr/bin/python3 <<'PYEOF'
-import json, sys, os
-
-settings_path = os.path.expanduser("~/.claude/settings.json")
-with open(settings_path) as f:
+with open(sp) as f:
     settings = json.load(f)
+if not isinstance(settings, dict):
+    settings = {}
+hooks = settings.get("hooks")
+if not isinstance(hooks, dict):
+    hooks = {}
 
-hooks = settings.get("hooks", {})
 
-mentu_hook = os.path.expanduser("~/.mentu/hooks/mentu-agent-hook.sh")
-mentu_stop = os.path.expanduser("~/.mentu/hooks/stop.sh")
-mentu_post = os.path.expanduser("~/.mentu/hooks/post-tool-use.sh")
-mentu_pre  = os.path.expanduser("~/.mentu/hooks/pre-tool-use-snapshot.sh")
+def H(name):
+    return os.path.join(dst, name)
 
-def is_superset_hook(cmd):
-    return "SUPERSET_HOME_DIR" in cmd or "superset" in cmd.lower()
 
-def filter_superset(hook_list):
-    """Remove Superset hooks from a hook list, keep everything else."""
-    result = []
-    for entry in hook_list:
-        if "hooks" in entry:
-            filtered = [h for h in entry["hooks"] if not is_superset_hook(h.get("command", ""))]
-            if filtered:
-                entry["hooks"] = filtered
-                result.append(entry)
-        else:
-            result.append(entry)
-    return result
+def entry(cmd, matcher=None, timeout=10):
+    e = {}
+    if matcher is not None:
+        e["matcher"] = matcher
+    e["hooks"] = [{"type": "command", "command": cmd, "timeout": timeout}]
+    return e
 
-# --- PreToolUse: keep existing mentu snapshot hook ---
-hooks["PreToolUse"] = [{
-    "matcher": "Edit|Write|MultiEdit",
-    "hooks": [{"type": "command", "command": mentu_pre, "timeout": 5}]
-}]
 
-# --- UserPromptSubmit: mentu universal hook ---
-existing = filter_superset(hooks.get("UserPromptSubmit", []))
-hooks["UserPromptSubmit"] = existing + [{
-    "hooks": [{"type": "command", "command": mentu_hook, "timeout": 3}]
-}] if not any(mentu_hook in str(e) for e in existing) else existing
+def ensure(event, cmd, matcher=None, timeout=10):
+    """Idempotent: append the mentu hook only if its command is not already
+    wired for this event (re-running never duplicates)."""
+    lst = hooks.get(event)
+    if not isinstance(lst, list):
+        lst = []
+    if not any(cmd in json.dumps(e) for e in lst):
+        lst = lst + [entry(cmd, matcher, timeout)]
+    hooks[event] = lst
 
-# --- SessionStart: keep existing session-start.sh ---
-# Don't touch SessionStart — it's managed separately
 
-# --- Stop: existing stop.sh + universal hook ---
-existing = filter_superset(hooks.get("Stop", []))
-stop_hooks = []
-# Ensure stop.sh is present
-if not any(mentu_stop in str(e) for e in existing):
-    stop_hooks.append({
-        "hooks": [{"type": "command", "command": mentu_stop, "timeout": 10}]
-    })
-# Ensure universal hook is present
-if not any(mentu_hook in str(e) for e in existing):
-    stop_hooks.append({
-        "hooks": [{"type": "command", "command": mentu_hook, "timeout": 3}]
-    })
-hooks["Stop"] = existing + stop_hooks
+universal = H("mentu_agent_hook.sh")
+perm = H("pre-tool-use-permission.sh")
+inject = H("pre-tool-use-inject.sh")
+review = H("review_gate.py")
+iso = H("context_isolation_gate.py")
 
-# --- PostToolUse: existing post-tool-use.sh + universal hook ---
-existing = filter_superset(hooks.get("PostToolUse", []))
-post_hooks = []
-if not any(mentu_post in str(e) for e in existing):
-    post_hooks.append({
-        "matcher": "*",
-        "hooks": [{"type": "command", "command": mentu_post, "timeout": 10}]
-    })
-if not any(mentu_hook in str(e) for e in existing):
-    post_hooks.append({
-        "matcher": "*",
-        "hooks": [{"type": "command", "command": mentu_hook, "timeout": 3}]
-    })
-hooks["PostToolUse"] = existing + post_hooks
+# observe (always) — the universal hook records each lifecycle signal.
+ensure("UserPromptSubmit", universal, timeout=3)
+ensure("PostToolUse", universal, matcher="*", timeout=3)
+ensure("PostToolUseFailure", universal, matcher="*", timeout=3)
+ensure("PermissionRequest", universal, matcher="*", timeout=3)
 
-# --- PostToolUseFailure: universal hook only ---
-existing = filter_superset(hooks.get("PostToolUseFailure", []))
-if not any(mentu_hook in str(e) for e in existing):
-    existing.append({
-        "matcher": "*",
-        "hooks": [{"type": "command", "command": mentu_hook, "timeout": 3}]
-    })
-hooks["PostToolUseFailure"] = existing
-
-# --- PermissionRequest: universal hook only ---
-existing = filter_superset(hooks.get("PermissionRequest", []))
-if not any(mentu_hook in str(e) for e in existing):
-    existing.append({
-        "matcher": "*",
-        "hooks": [{"type": "command", "command": mentu_hook, "timeout": 3}]
-    })
-hooks["PermissionRequest"] = existing
+# gate / pre-action — only where the capability registry says gate:True.
+if can_gate:
+    ensure("PreToolUse", inject, matcher="Agent", timeout=5)
+    ensure("PreToolUse", perm, matcher="*", timeout=5)
+    ensure("Stop", review, timeout=15)
+    ensure("SubagentStop", iso, timeout=10)
 
 settings["hooks"] = hooks
-
-with open(settings_path, "w") as f:
+with open(sp, "w") as f:
     json.dump(settings, f, indent=2)
     f.write("\n")
-
-print("[mentu-hooks] Claude Code settings updated — Superset hooks replaced with Mentu CIR hooks")
-PYEOF
+print("[mentu-hooks] Claude Code wiring updated (gate=%s)" % can_gate)
+PY
 else
-    warn "Claude Code settings not found at $CLAUDE_SETTINGS"
+    warn "Claude Code settings not found at $CLAUDE_SETTINGS — skipping"
 fi
 
-# ─── Step 3: Cursor — install CIR hooks ──────────────────────────────────────
-
+# ─── Step 4: Cursor — observe + pre-action gate (gate:True) ──────────────────
 CURSOR_HOOKS="$HOME/.cursor/hooks.json"
 if [[ -d "$HOME/.cursor" ]]; then
-    if [[ -f "$CURSOR_HOOKS" ]]; then
-        mkdir -p "$BACKUP_DIR"
-        cp "$CURSOR_HOOKS" "$BACKUP_DIR/cursor-hooks.json"
-        log "Backed up Cursor hooks → $BACKUP_DIR/cursor-hooks.json"
-    fi
+    backup "$CURSOR_HOOKS" cursor-hooks.json
+    MENTU_HOOKS_DST="$HOOKS_DST" CURSOR_HOOKS="$CURSOR_HOOKS" /usr/bin/env python3 <<'PY'
+import json, os, sys
+dst = os.environ["MENTU_HOOKS_DST"]
+sp = os.environ["CURSOR_HOOKS"]
+sys.path.insert(0, dst)
+try:
+    from mentu_policy import capabilities
+    can_gate = capabilities.supports("cursor", "gate")
+except Exception:
+    can_gate = True
+hook = os.path.join(dst, "cursor_cir_hook.sh")
 
-    cursor_hook="$HOOKS_DST/cursor_cir_hook.sh"
-    cat > "$CURSOR_HOOKS" <<CURSOREOF
-{
-  "beforeSubmitPrompt": "$cursor_hook Start",
-  "stop": "$cursor_hook Stop",
-  "beforeShellExecution": "$cursor_hook PermissionRequest",
-  "beforeMCPExecution": "$cursor_hook PermissionRequest"
+# Full overwrite of the mentu-owned map → idempotent by construction. The event
+# name is passed as argv[1] so the cursor adapter resolves the native event.
+m = {
+    "beforeSubmitPrompt": "%s beforeSubmitPrompt" % hook,  # observe (prompt)
+    "stop": "%s stop" % hook,                              # observe
 }
-CURSOREOF
-    log "Cursor hooks installed → $CURSOR_HOOKS"
+if can_gate:
+    m["beforeShellExecution"] = "%s beforeShellExecution" % hook  # gate
+    m["beforeMCPExecution"] = "%s beforeMCPExecution" % hook      # gate
+with open(sp, "w") as f:
+    json.dump(m, f, indent=2)
+    f.write("\n")
+print("[mentu-hooks] Cursor wiring updated (gate=%s)" % can_gate)
+PY
 else
     log "Cursor not detected (no ~/.cursor/) — skipping"
 fi
 
-# ─── Step 4: Gemini — install CIR hooks ──────────────────────────────────────
-
+# ─── Step 5: Gemini — OBSERVE-ONLY (gate:False) ──────────────────────────────
+# Gemini's lifecycle events are post-hoc, so the registry says gate:False. We
+# wire BeforeAgent/AfterAgent/AfterTool for observe + annotate and NEVER a
+# pre-action gate it cannot honor.
 GEMINI_SETTINGS="$HOME/.gemini/settings.json"
 if [[ -d "$HOME/.gemini" ]]; then
-    if [[ -f "$GEMINI_SETTINGS" ]]; then
-        mkdir -p "$BACKUP_DIR"
-        cp "$GEMINI_SETTINGS" "$BACKUP_DIR/gemini-settings.json"
-        log "Backed up Gemini settings → $BACKUP_DIR/gemini-settings.json"
-    fi
+    backup "$GEMINI_SETTINGS" gemini-settings.json
+    MENTU_HOOKS_DST="$HOOKS_DST" GEMINI_SETTINGS="$GEMINI_SETTINGS" /usr/bin/env python3 <<'PY'
+import json, os, sys
+dst = os.environ["MENTU_HOOKS_DST"]
+sp = os.environ["GEMINI_SETTINGS"]
+sys.path.insert(0, dst)
+try:
+    from mentu_policy import capabilities
+    can_gate = capabilities.supports("gemini", "gate")  # False — load-bearing
+except Exception:
+    can_gate = False
 
-    gemini_hook="$HOOKS_DST/gemini_cir_hook.sh"
-    /usr/bin/python3 <<PYEOF
-import json, os
-
-path = os.path.expanduser("~/.gemini/settings.json")
 settings = {}
-if os.path.exists(path):
+if os.path.exists(sp):
     try:
-        with open(path) as f:
+        with open(sp) as f:
             settings = json.load(f)
     except (json.JSONDecodeError, IOError):
         settings = {}
+if not isinstance(settings, dict):
+    settings = {}
 
-hook = "$gemini_hook"
+hook = os.path.join(dst, "gemini_cir_hook.sh")
+hooks = settings.get("hooks")
+if not isinstance(hooks, dict):
+    hooks = {}
 
-# Gemini uses nested hooks structure (same as Claude Code)
-hooks = settings.get("hooks", {})
+# Capability honesty: Gemini is OBSERVE-ONLY. Refuse to wire any gate for it.
+if can_gate:
+    raise SystemExit("[mentu-hooks] refusing: gemini registry says gate:False")
 for event in ("BeforeAgent", "AfterAgent", "AfterTool"):
     hooks[event] = [{"hooks": [{"type": "command", "command": hook}]}]
 settings["hooks"] = hooks
 
-# Remove any spurious top-level hook keys
+# Remove any spurious top-level hook keys (legacy hygiene).
 for key in ("BeforeAgent", "AfterAgent", "AfterTool"):
     settings.pop(key, None)
 
-with open(path, "w") as f:
+with open(sp, "w") as f:
     json.dump(settings, f, indent=2)
     f.write("\n")
-
-print("[mentu-hooks] Gemini settings updated with CIR hooks")
-PYEOF
+print("[mentu-hooks] Gemini observe-only wiring updated (no pre-action gate)")
+PY
 else
     log "Gemini not detected (no ~/.gemini/) — skipping"
 fi
 
-# ─── Step 5: Codex — install CIR hooks ───────────────────────────────────────
-
+# ─── Step 6: Codex — observe + pre-action gate (gate:True) ───────────────────
 CODEX_HOOKS="$HOME/.codex/hooks.json"
 if [[ -d "$HOME/.codex" ]]; then
-    if [[ -f "$CODEX_HOOKS" ]]; then
-        mkdir -p "$BACKUP_DIR"
-        cp "$CODEX_HOOKS" "$BACKUP_DIR/codex-hooks.json"
-        log "Backed up Codex hooks → $BACKUP_DIR/codex-hooks.json"
-    fi
+    backup "$CODEX_HOOKS" codex-hooks.json
+    MENTU_HOOKS_DST="$HOOKS_DST" CODEX_HOOKS="$CODEX_HOOKS" /usr/bin/env python3 <<'PY'
+import json, os, sys
+dst = os.environ["MENTU_HOOKS_DST"]
+sp = os.environ["CODEX_HOOKS"]
+sys.path.insert(0, dst)
+try:
+    from mentu_policy import capabilities
+    can_gate = capabilities.supports("codex", "gate")
+except Exception:
+    can_gate = True
+hook = os.path.join(dst, "codex_cir_hook.sh")
 
-    codex_hook="$HOOKS_DST/codex_cir_hook.sh"
-    cat > "$CODEX_HOOKS" <<CODEXEOF
-{
-  "UserPromptSubmit": "$codex_hook",
-  "Stop": "$codex_hook",
-  "PostToolUse": "$codex_hook",
-  "PostToolUseFailure": "$codex_hook",
-  "PermissionRequest": "$codex_hook"
+# Full overwrite → idempotent. Observe events always; the approval/permission
+# pre-action gates only where the registry says gate:True.
+m = {
+    "UserPromptSubmit": hook,
+    "Stop": hook,
+    "PostToolUse": hook,
+    "PostToolUseFailure": hook,
 }
-CODEXEOF
-    log "Codex hooks installed → $CODEX_HOOKS"
+if can_gate:
+    m["PermissionRequest"] = hook
+    m["_approval_request"] = hook
+with open(sp, "w") as f:
+    json.dump(m, f, indent=2)
+    f.write("\n")
+print("[mentu-hooks] Codex wiring updated (gate=%s)" % can_gate)
+PY
 else
     log "Codex not detected (no ~/.codex/) — skipping"
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
-
 log ""
 log "Installation complete."
-log "Backups saved to: $BACKUP_DIR"
-log ""
-log "All AI tool events now flow through CIR:"
-log "  mentu cir query --limit 10          # see recent signals"
-log "  mentu cir query --actor agent:cursor # filter by tool"
-log "  mentu cir patterns --detect          # find cross-tool patterns"
+[[ -d "$BACKUP_DIR" ]] && log "Backups saved to: $BACKUP_DIR"
+log "Policy package: $PKG_DST"
+log "Capability-aware wiring: gate events only for Claude/Codex/Cursor;"
+log "Gemini observe-only (post-hoc, gate:False)."

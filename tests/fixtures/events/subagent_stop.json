@@ -1,0 +1,8 @@
+{
+  "agent": "claude",
+  "event": "subagent_stop",
+  "session_id": "sess-0009",
+  "actor": "agent:claude",
+  "cwd": "/tmp/project",
+  "message": "Subtask complete: findings written to .claude/summaries/scan.md"
+}

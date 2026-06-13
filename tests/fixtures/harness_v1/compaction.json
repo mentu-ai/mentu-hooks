@@ -1,0 +1,5 @@
+{
+  "type": "compaction",
+  "phase": "post",
+  "source": "auto"
+}

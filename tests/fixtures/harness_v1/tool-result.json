@@ -1,0 +1,7 @@
+{
+  "type": "tool-result",
+  "toolCallId": "call_demo_0001",
+  "toolName": "Bash",
+  "output": "mentu-harness-demo\n",
+  "isError": false
+}

@@ -1,0 +1,4 @@
+[
+  {"name": "boundary-catch", "recurrenceCount": 7, "strength": 0.82, "description": "catch at boundaries, never mid-flight"},
+  {"name": "fail-open-substrate", "recurrenceCount": 3, "strength": 0.55, "description": "absent substrate degrades to no-op"}
+]

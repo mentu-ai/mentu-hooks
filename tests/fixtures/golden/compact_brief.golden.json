@@ -1,0 +1,6 @@
+{
+  "exit_code": 0,
+  "ledger_ops_normalized": [],
+  "mentu_argv": [],
+  "stdout": "## Protocol State (restored after compaction)\n\n**Active protocols:** context-isolation, review-gate\n**Current step:** implement-feature\n**Sequence:** golden-seq\n\n**IMPORTANT reminders:**\n- Keep changes in scope\n- Run the build before exit\n\n\n**Auto-review is ON** \u2014 your exit will be gated on: build pass, LOOP_COMPLETE marker, and git changes.\n\n"
+}

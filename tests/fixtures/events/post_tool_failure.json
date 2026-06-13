@@ -1,0 +1,13 @@
+{
+  "agent": "gemini",
+  "event": "post_tool_failure",
+  "session_id": "sess-0005",
+  "actor": "agent:gemini",
+  "cwd": "/tmp/project",
+  "tool": {
+    "name": "Bash",
+    "input": { "command": "ls missing-dir" },
+    "output": "ls: missing-dir: No such file or directory",
+    "exit_code": 1
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "exit_code": 0,
+  "ledger_ops_normalized": [],
+  "mentu_argv": [
+    [
+      "cir",
+      "capture",
+      "--kind",
+      "permission_gate",
+      "--body",
+      "cursor: MCP execution requested",
+      "--domain",
+      "golden-ws",
+      "--actor",
+      "agent:cursor"
+    ]
+  ],
+  "stdout": "{\"continue\":true}\n"
+}

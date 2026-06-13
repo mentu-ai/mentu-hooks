@@ -1,60 +1,9 @@
 #!/usr/bin/env bash
-# Mentu CIR Hook — Cursor Agent Adapter
-# Maps Cursor hook events to CIR signals.
-# Cursor hooks: beforeSubmitPrompt, stop, beforeShellExecution, beforeMCPExecution
-#
-# Cursor protocol: hooks write JSON to stdout for responses.
-# beforeShellExecution expects {"continue":true} to auto-approve.
-set -euo pipefail
-
-# Cursor passes event type as $1
-EVENT="${1:-unknown}"
-ACTOR="agent:cursor"
-
-INPUT=""
-if [[ ! -t 0 ]]; then
-    INPUT=$(cat)
-fi
-
-CWD="${PWD:-unknown}"
-DOMAIN=$(basename "$CWD" 2>/dev/null || echo "unknown")
-
-case "$EVENT" in
-    Start|beforeSubmitPrompt)
-        KIND="prompt_submit"
-        BODY="cursor: prompt submitted"
-        ;;
-    Stop|stop)
-        KIND="session_stop"
-        BODY="cursor: session ended"
-        ;;
-    PermissionRequest|beforeShellExecution)
-        KIND="permission_gate"
-        BODY="cursor: shell execution requested"
-        # Auto-approve — Cursor expects JSON response on stdout
-        echo '{"continue":true}'
-        ;;
-    beforeMCPExecution)
-        KIND="permission_gate"
-        BODY="cursor: MCP execution requested"
-        echo '{"continue":true}'
-        ;;
-    *)
-        KIND="agent_event"
-        BODY="cursor: ${EVENT}"
-        ;;
-esac
-
-# Emit CIR signal (fire-and-forget)
-timeout 2 mentu cir capture \
-    --kind "$KIND" \
-    --body "$BODY" \
-    --domain "$DOMAIN" \
-    --actor "$ACTOR" >/dev/null 2>&1 || true
-
-# If we haven't already printed a response, print empty JSON
-if [[ "$EVENT" != "PermissionRequest" && "$EVENT" != "beforeShellExecution" && "$EVENT" != "beforeMCPExecution" ]]; then
-    echo '{}'
-fi
-
-exit 0
+# Mentu CIR Hook — Cursor Agent Adapter (thin shim).
+# Maps Cursor events (passed as $1) to CIR signals AND wires the real
+# permission verdict via the mentu_policy cursor adapter — the hardcoded
+# {"continue":true} is gone; the verdict now comes from evaluate(). Resolves the
+# package relative to its own location. Fails open to {}.
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+if [ -d "$SCRIPT_DIR/../mentu_policy" ]; then PKG="$SCRIPT_DIR/.."; else PKG="$SCRIPT_DIR"; fi
+python3 "$PKG/mentu_policy/adapters/shim.py" --agent cursor "${1:-unknown}" || echo '{}'

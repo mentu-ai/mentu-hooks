@@ -1,0 +1,19 @@
+{
+  "exit_code": 0,
+  "ledger_ops_normalized": [],
+  "mentu_argv": [
+    [
+      "cir",
+      "capture",
+      "--kind",
+      "command_exec",
+      "--body",
+      "agent:claude: bash command executed",
+      "--domain",
+      "golden-ws",
+      "--actor",
+      "agent:claude"
+    ]
+  ],
+  "stdout": "{}\n"
+}

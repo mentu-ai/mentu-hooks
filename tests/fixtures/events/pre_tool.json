@@ -1,0 +1,11 @@
+{
+  "agent": "codex",
+  "event": "pre_tool",
+  "session_id": "sess-0003",
+  "actor": "agent:codex",
+  "cwd": "/tmp/project",
+  "tool": {
+    "name": "Bash",
+    "input": { "command": "ls -la" }
+  }
+}

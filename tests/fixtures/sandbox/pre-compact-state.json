@@ -1,0 +1,7 @@
+{
+  "active_protocols": ["context-isolation", "review-gate"],
+  "step_label": "implement-feature",
+  "sequence_name": "golden-seq",
+  "reminders": ["Keep changes in scope", "Run the build before exit"],
+  "auto_review": true
+}

@@ -22,6 +22,12 @@ Only activates when:
 Exit codes:
   0 = allow (pass through)
   2 = block (instructs sub-agent to write to filesystem instead)
+
+Delegation: the primary path routes through the mentu_policy claude adapter
+(one decision authority, golden-parity gated). If mentu_policy cannot be
+imported or the pipeline faults for ANY reason, this file falls back to the
+verbatim inline legacy logic below — so this LIVE hook never depends on the
+package being present. The outermost guard fails open (exit 0).
 """
 from __future__ import annotations
 
@@ -29,6 +35,18 @@ import json
 import re
 import sys
 from pathlib import Path
+
+
+def _bootstrap_policy_path() -> None:
+    """Make ``mentu_policy`` importable relative to THIS file (repo:
+    hooks/../mentu_policy; a future deployed copy: alongside in hooks/)."""
+    here = Path(__file__).resolve().parent
+    for cand in (here.parent, here):
+        if (cand / "mentu_policy" / "__init__.py").exists():
+            p = str(cand)
+            if p not in sys.path:
+                sys.path.insert(0, p)
+            return
 
 
 def is_active() -> bool:
@@ -78,10 +96,12 @@ def check_message(message: str) -> str | None:
     return None
 
 
-def main():
+def _legacy_check(stdin_text: str) -> None:
+    """Verbatim inline fallback (the original hook logic) — used only when the
+    mentu_policy pipeline is unavailable. Same external contract."""
     try:
-        hook_input = json.load(sys.stdin)
-    except (json.JSONDecodeError, EOFError):
+        hook_input = json.loads(stdin_text)
+    except (json.JSONDecodeError, EOFError, ValueError):
         sys.exit(0)
 
     if not is_active():
@@ -104,9 +124,30 @@ def main():
     sys.exit(0)
 
 
+def main():
+    stdin_text = sys.stdin.read()
+
+    # Primary path: the mentu_policy claude adapter pipeline.
+    try:
+        _bootstrap_policy_path()
+        from mentu_policy.adapters import shim
+        stdout, code = shim.run("claude", "subagent_stop", stdin_text)
+        if stdout:
+            sys.stdout.write(stdout)
+        sys.exit(code)
+    except SystemExit:
+        raise
+    except BaseException:
+        pass  # any import/runtime fault -> verbatim inline fallback
+
+    _legacy_check(stdin_text)
+
+
 if __name__ == "__main__":
     try:
         main()
+    except SystemExit:
+        raise
     except Exception as e:
         sys.stderr.write(f"context_isolation_gate error: {e}\n")
         sys.exit(0)  # Fail open — don't block on hook errors

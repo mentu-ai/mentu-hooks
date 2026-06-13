@@ -1,0 +1,6 @@
+{
+  "exit_code": 0,
+  "ledger_ops_normalized": [],
+  "mentu_argv": [],
+  "stdout": "{\n  \"hookSpecificOutput\": {\n    \"hookEventName\": \"PreToolUse\",\n    \"updatedInput\": {\n      \"prompt\": \"Investigate the auth regression and summarize findings.\\n\\n<cir-context>\\nRecent evidence from the epistemic ledger (read-only \u2014 do not modify):\\ncapture: learned the boundary-catch invariant\\nannotate: noted fail-open substrate behavior\\n</cir-context>\\nTrust state: 1 approvals, 1 warnings in this session.\"\n    }\n  }\n}\n"
+}

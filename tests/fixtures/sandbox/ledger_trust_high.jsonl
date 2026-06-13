@@ -1,0 +1,10 @@
+{"op":"approve","payload":{"body":"ok-0"}}
+{"op":"approve","payload":{"body":"ok-1"}}
+{"op":"approve","payload":{"body":"ok-2"}}
+{"op":"approve","payload":{"body":"ok-3"}}
+{"op":"approve","payload":{"body":"ok-4"}}
+{"op":"approve","payload":{"body":"ok-5"}}
+{"op":"approve","payload":{"body":"ok-6"}}
+{"op":"approve","payload":{"body":"ok-7"}}
+{"op":"approve","payload":{"body":"ok-8"}}
+{"kind":"warning","payload":{"body":"warn-0"}}

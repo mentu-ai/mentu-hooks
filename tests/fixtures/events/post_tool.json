@@ -1,0 +1,13 @@
+{
+  "agent": "claude",
+  "event": "post_tool",
+  "session_id": "sess-0004",
+  "actor": "agent:claude",
+  "cwd": "/tmp/project",
+  "tool": {
+    "name": "Bash",
+    "input": { "command": "ls -la" },
+    "output": "README.md\nsrc\n",
+    "exit_code": 0
+  }
+}

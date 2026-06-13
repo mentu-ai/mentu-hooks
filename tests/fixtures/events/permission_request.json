@@ -1,0 +1,11 @@
+{
+  "agent": "claude",
+  "event": "permission_request",
+  "session_id": "sess-0006",
+  "actor": "agent:claude",
+  "cwd": "/tmp/project",
+  "tool": {
+    "name": "Write",
+    "input": { "file_path": "/tmp/project/out.txt", "content": "hello" }
+  }
+}

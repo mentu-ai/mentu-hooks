@@ -1,0 +1,8 @@
+{
+  "agent": "mentu",
+  "event": "stop",
+  "session_id": "sess-0010",
+  "actor": "agent:mentu",
+  "cwd": "/tmp/project",
+  "message": "All steps complete. LOOP_COMPLETE"
+}
