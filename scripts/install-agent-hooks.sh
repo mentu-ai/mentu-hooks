@@ -53,6 +53,7 @@ SHIM_HOOKS=(
     cursor_cir_hook.sh          # cursor adapter shim (real permission verdict)
     gemini_cir_hook.sh          # gemini adapter shim (observe-only / degrade)
     pre-tool-use-permission.sh  # claude trust-banded gate
+    pre-tool-use-firewall.py    # ABSOLUTE repo-wipe firewall (trust-independent backstop)
     pre-tool-use-inject.sh      # claude sub-agent prompt enrichment (supply)
     review_gate.py              # claude Stop gate
     context_isolation_gate.py   # claude SubagentStop gate
@@ -126,6 +127,14 @@ ensure("UserPromptSubmit", universal, timeout=3)
 ensure("PostToolUse", universal, matcher="*", timeout=3)
 ensure("PostToolUseFailure", universal, matcher="*", timeout=3)
 ensure("PermissionRequest", universal, matcher="*", timeout=3)
+
+# ABSOLUTE safety firewall — blocks catastrophic repo-destroying Bash commands (rm -rf of a
+# repo/.git/home/root, git clean -fx). Installed UNCONDITIONALLY (NOT gated by can_gate): it is
+# a hard backstop, not a trust gate, and must fire even under --dangerously-skip-permissions.
+firewall = "python3 " + H("pre-tool-use-firewall.py")
+# One combined matcher (ensure() dedups by command, so a single entry must cover every tool the
+# firewall inspects): Bash (rm/git-clean/find) + Write/Edit/... (writes into .git).
+ensure("PreToolUse", firewall, matcher="Bash|Write|Edit|MultiEdit|NotebookEdit", timeout=5)
 
 # gate / pre-action — only where the capability registry says gate:True.
 if can_gate:

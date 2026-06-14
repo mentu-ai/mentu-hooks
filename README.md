@@ -151,6 +151,19 @@ perform:
 - **Local-first.** All evidence and decisions are written to your own machine. Nothing leaves the
   device.
 
+**The one deliberate fail-*closed* exception — the safety firewall.** Everything above fails *open*.
+The single exception is [`hooks/pre-tool-use-firewall.py`](hooks/pre-tool-use-firewall.py): a
+`PreToolUse` backstop that refuses a small, explicit set of catastrophic, irreversible actions — `rm -rf`
+of a git repo / a `.git` directory / `$HOME` / `/`, `git clean -fx` at a repo root, `find <repo> … -delete`,
+and writes *into* a `.git` directory. It is installed unconditionally (not trust-gated), and because
+`PreToolUse` hooks run independently of an agent's permission prompt it fires **even under
+`--dangerously-skip-permissions`**. It is a high-value tripwire for the accidental/buggy case, *not* a
+sandbox: it pattern-matches commands, so a determined agent could still delete via code it writes
+(`python3 -c "shutil.rmtree(...)"`) — true containment is the runner's worktree/sandbox isolation. This is
+the cheap, always-on guard for the catastrophe that pattern-matching *can* catch; anything it does not
+positively recognize as catastrophic is allowed (it fails open on parse errors and on every non-matching
+command).
+
 ---
 
 ## Installation
