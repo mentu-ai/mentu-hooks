@@ -3,25 +3,38 @@
 **A cross-agent governance layer for AI coding agents.**
 
 The Mentu Policy Harness is a consent-based, fail-open, auditable governance layer you install on
-*your own* machine to govern *your own* AI coding agents — Claude Code, Codex, Cursor, Gemini, and
+*your own* machine to govern *your own* AI coding agents: Claude Code, Codex, Cursor, Gemini, and
 mentu's own runner. It does three things, all defensive, at well-defined decision boundaries:
 
-- **Observe** — record your own agent's activity as a local audit trail.
-- **Supply context** — enrich an agent's working context with your own prior decisions, trust state,
+- **Observe**: record your own agent's activity as a local audit trail.
+- **Supply context**: enrich an agent's working context with your own prior decisions, trust state,
   and commitments, so long sessions stay coherent.
-- **Gate** — enforce your own safety policy at decision boundaries: refuse to let an agent stage a
+- **Gate**: enforce your own safety policy at decision boundaries: refuse to let an agent stage a
   hardcoded credential, run a destructive command below a trust threshold, or flood a sub-agent's
   return with raw data.
 
 One policy core, written once, sees a normalized `AgentEvent` and returns a normalized `Decision`.
 Thin per-agent adapters translate each vendor's native hook I/O into that contract and back. Where an
-agent *cannot* enforce a verb, the harness degrades transparently and records that it could not — it
+agent *cannot* enforce a verb, the harness degrades transparently and records that it could not. It
 never claims a guarantee it can't deliver.
 
 > **What this is NOT.** It is not a tool for acting on third-party systems, observing anyone other
 > than the operator's own agents, or doing anything without the operator's explicit configuration.
 > Every hook is installed by you, into your own agent config. Every decision is logged. The substrate
 > is optional and **fail-open**: when it is absent, the harness is a permissive no-op.
+
+**Who it is for.** Anyone running Claude Code, Codex, Cursor, or Gemini who wants one audit trail and
+one safety policy across all of them instead of four separate hook configs.
+
+**Relation to Mentu.** This is the policy layer of [Mentu](https://mentu.ai), published on its own so
+it can be used without the rest of the stack. It is standalone Python with no third-party runtime
+dependency. Clone it, run the installer, and it governs the agents you already have.
+
+The `mentu` engine and its CLI are **not publicly distributed**, and nothing here requires them. The
+`mentu` rows in the tables below describe the adapter for that runner, which is exercised by the test
+suite and reachable only to operators who already run the engine. When the mentu substrate is absent,
+the harness is fail-open by design: it observes, supplies, and gates using local state alone. Every
+install and test instruction in this README runs with no Mentu components installed.
 
 Licensed under the **Apache License 2.0**.
 
@@ -57,10 +70,10 @@ Every adapter does exactly the same three steps; the policy lives in the core, n
 ## The AgentEvent → Decision ABI
 
 The contract between adapters and the policy core is a plain JSON shape (with reference Python
-dataclasses in `mentu_policy/abi.py`). The core only ever sees normalized facts — no agent
+dataclasses in `mentu_policy/abi.py`). The core only ever sees normalized facts: no agent
 credentials, no socket handles, no native envelopes. This is the least-privilege seam.
 
-### `AgentEvent` — normalized lifecycle event (input)
+### `AgentEvent`: normalized lifecycle event (input)
 
 The union of every supported agent's hook points, collapsed to one schema:
 
@@ -78,9 +91,9 @@ The union of every supported agent's hook points, collapsed to one schema:
 Normalized events: `session_start`, `prompt_submit`, `pre_tool`, `post_tool`, `post_tool_failure`,
 `permission_request`, `pre_compact`, `post_compact`, `subagent_stop`, `stop`, `session_end`.
 
-### `Decision` — normalized verdict (output)
+### `Decision`: normalized verdict (output)
 
-`Decision.verb` is a closed enum — the core cannot emit an action an adapter doesn't know how to
+`Decision.verb` is a closed enum. The core cannot emit an action an adapter doesn't know how to
 encode safely:
 
 | verb | meaning |
@@ -88,7 +101,7 @@ encode safely:
 | `allow` | permit the action |
 | `deny` | refuse at this boundary (fail-closed), with a reason |
 | `ask` | defer to the operator (human approval) |
-| `pass` | no opinion — fall through to the agent's own default |
+| `pass` | no opinion, fall through to the agent's own default |
 | `inject` | supply context (`inject_context` / `updated_input`) |
 | `annotate` | record a local audit signal; does **not** alter the action |
 
@@ -122,13 +135,13 @@ When the registry says a verb is unsupported, `mentu_policy/degrade.py` reconcil
 adapter encodes a response:
 
 - **`deny` / `ask` on a non-gating agent (Gemini)** → down-shift to **`annotate`** (observe + warn).
-  The adapter emits the agent's additive no-op — never a false "blocked" claim — and one
+  The adapter emits the agent's additive no-op, never a false "blocked" claim, and one
   `capability_degraded` signal `{agent, requested_verb, applied_verb, reason}` records that the
   refusal could not be enforced, so it is auditable and never silently dropped.
 - **`inject` on a constrained (`~`) channel** → re-encode the context as a prompt prefix. It is still
   delivered, just through the prompt, so nothing is lost and no signal is emitted. If no supply
   channel exists at all, skip (`pass`) and log a `supply_skipped` signal.
-- **A full-capability agent** passes through unchanged. An **unknown agent fails open** — the ladder
+- **A full-capability agent** passes through unchanged. An **unknown agent fails open**. The ladder
   never invents a capability claim it cannot ground in the registry, and never raises.
 
 ---
@@ -139,27 +152,27 @@ The harness is designed so its own failure can never block your work or fake an 
 perform:
 
 - **Absent substrate ⇒ permissive no-op.** If the local ledger / substrate is missing or errors, the
-  harness has no opinion (`pass`) — it never denies on its own infrastructure failure.
+  harness has no opinion (`pass`). It never denies on its own infrastructure failure.
 - **Garbage input ⇒ exit 0.** Every entry hook tolerates malformed stdin and exits cleanly.
 - **Internal exception ⇒ `pass`.** Each gate body is wrapped fail-open; an internal fault returns a
   no-opinion `Decision`, never a refusal.
 - **Boundary-only enforcement.** Gates fire at decision boundaries (pre-tool, stop, subagent-stop,
   permission-request). Nothing here aborts a running action mid-flight; the worst possible outcome is
   "refuse at the next boundary."
-- **Least privilege.** The policy core holds no agent credentials and no agent API surface — it sees
+- **Least privilege.** The policy core holds no agent credentials and no agent API surface. It sees
   a normalized event and returns a normalized decision. All privileged I/O stays in the adapters.
 - **Local-first.** All evidence and decisions are written to your own machine. Nothing leaves the
   device.
 
-**The one deliberate fail-*closed* exception — the safety firewall.** Everything above fails *open*.
+**The one deliberate fail-*closed* exception, the safety firewall.** Everything above fails *open*.
 The single exception is [`hooks/pre-tool-use-firewall.py`](hooks/pre-tool-use-firewall.py): a
-`PreToolUse` backstop that refuses a small, explicit set of catastrophic, irreversible actions — `rm -rf`
+`PreToolUse` backstop that refuses a small, explicit set of catastrophic, irreversible actions: `rm -rf`
 of a git repo / a `.git` directory / `$HOME` / `/`, `git clean -fx` at a repo root, `find <repo> … -delete`,
 and writes *into* a `.git` directory. It is installed unconditionally (not trust-gated), and because
 `PreToolUse` hooks run independently of an agent's permission prompt it fires **even under
 `--dangerously-skip-permissions`**. It is a high-value tripwire for the accidental/buggy case, *not* a
 sandbox: it pattern-matches commands, so a determined agent could still delete via code it writes
-(`python3 -c "shutil.rmtree(...)"`) — true containment is the runner's worktree/sandbox isolation. This is
+(`python3 -c "shutil.rmtree(...)"`). True containment is the runner's worktree/sandbox isolation. This is
 the cheap, always-on guard for the catastrophe that pattern-matching *can* catch; anything it does not
 positively recognize as catastrophic is allowed (it fails open on parse errors and on every non-matching
 command).
@@ -184,10 +197,10 @@ What the installer does:
    dependency).
 2. **Deploys the adapter shim hooks** to `~/.mentu/hooks/`.
 3. **Wires each detected agent's native config** capability-aware:
-   - **Claude Code** (`~/.claude/settings.json`) — observe + supply + gate.
-   - **Cursor** (`~/.cursor/hooks.json`) — observe + pre-action gate.
-   - **Codex** (`~/.codex/hooks.json`) — observe + pre-action gate.
-   - **Gemini** (`~/.gemini/settings.json`) — **observe-only**; the installer refuses to wire any
+   - **Claude Code** (`~/.claude/settings.json`): observe + supply + gate.
+   - **Cursor** (`~/.cursor/hooks.json`): observe + pre-action gate.
+   - **Codex** (`~/.codex/hooks.json`): observe + pre-action gate.
+   - **Gemini** (`~/.gemini/settings.json`): **observe-only**; the installer refuses to wire any
      pre-action gate for it, because the registry says it cannot honor one.
 4. **Backs up** every native config it edits to `~/.mentu/backups/<timestamp>/` first.
 
@@ -244,10 +257,11 @@ mentu-hooks/
 
 ## Requirements
 
-- **Python 3.10+** (standard library only — no third-party runtime dependency)
+- **Python 3.10+** (standard library only, no third-party runtime dependency)
 - **Bash** for the adapter shims and scripts
-- One or more of: Claude Code, Codex, Cursor, Gemini, or the mentu runner
-- The mentu CLI is **optional** — it enriches the substrate, but the harness is fail-open without it
+- One or more of: Claude Code, Codex, Cursor, or Gemini
+- The mentu CLI is **not required and not publicly distributed**. It enriches the substrate where it
+  is present. Without it the harness is fail-open and fully usable.
 
 ---
 
